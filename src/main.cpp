@@ -112,6 +112,8 @@ void setup(){
 void loopHR(void * pvParameter) {
   for(;;){
     xSemaphoreTake( baton, portMAX_DELAY);
+    double t_HR = millis();
+    Serial.println(); Serial.print("t_HR: "); Serial.print(t_HR); Serial.println();
     int flag=readSamples();
     Serial.println();
     Serial.println("----------------------------------------------------------------------------------------------------");
@@ -302,7 +304,10 @@ void ComputeSpO2(void * pvParameter){
    //need to initialise all the variables for SpO2, make them global
 for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
     xSemaphoreTake( baton, portMAX_DELAY);
-    if (flag_unplugged = 1) {
+    xSemaphoreGive( baton ); //this is the second line because it is the shortest task (compared to HR)
+    double t_SP = millis();
+    Serial.println(); Serial.print("t_SP: "); Serial.print(t_SP); Serial.println();
+    if (flag_unplugged = 1) { //calculate the SpO2 only if the finger is plugged, name of the flag is counterintuitive
       int mean_ir = Find_Mean(0, Num_Samples, ma_ir2_buffer);
       int mean_red = Find_Mean(0, Num_Samples, ma_red_buffer);
       
@@ -407,20 +412,26 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
       }else{
         SpO2_next=SpO2_previous;
       }
-      //Maria mou, einai okay pou deixnw to SpO2? 'h mhpws na deixnw to SpO2_next? (einai prediction, alla mhpws einai pio accurate?)
+      
       SpO2=int(round(SpO2_next));
       if (flag_unplugged == 0 || HR == 0){ //if unplugged show this 
         //SpO2 = 0; //this is probably not needed
+        Serial.println();
         Serial.println("SpO2 : unplugged");
       }else {
+        Serial.println();
         Serial.print("SpO2 : ");
         Serial.print(SpO2);
+        Serial.print(" %");
         Serial.println();
       }
+      // Serial.println(); Serial.print("time to run the SpO2 task: "); Serial.print(millis() - t_SP); Serial.println(); // I want to measure how long does it take for SpO2 task to run
       vTaskDelay(Sampling_Time / portTICK_PERIOD_MS);
     }
-    xSemaphoreGive( baton );
+    // xSemaphoreGive( baton ); //this line not here, as this is the shortest task, we immediately give the semaphore to the other task
     delay(50);
   }
 }
 
+//now both threads are in sync, they begin exactly at the same time
+//this part of code is considered complete
