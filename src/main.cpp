@@ -4,6 +4,7 @@
 #include "IIRFilter.h"
 #include <Arduino.h>
 
+
 MAX30105 Sensor;
 
 //***Define signal parameters
@@ -11,10 +12,13 @@ int samp_freq=25; //for each led
 const int Num_Samples = 100;  //it stores 4 sec 
 
 uint32_t gr_buffer[Num_Samples];
+uint32_t ir_buffer[Num_Samples];
 int filtered_gr_buffer[Num_Samples];
+int filtered_ir_buffer[Num_Samples];
 int ma_gr_buffer[Num_Samples];
+int ma_ir_buffer[Num_Samples];
 
-const int points_pr=4;
+const int points_pr=4; //ask Maria if that is the number of peaks that I use to compute the HR
 float PR[points_pr];
 float Pulse_Rate_next=0, Pulse_Rate_previous=70;
 int HR;
@@ -28,6 +32,7 @@ const double a[] = {1,-2.299055356038497,1.967497759984451,-0.874805556449481,0.
 
 IIRFilter f(b, a);
 double filtered_gr=0;
+double filtered_ir=0;
 
 int Moving_Average_Num = 2;
 int Num_Points = 2*Moving_Average_Num+1;  //***5-point moving average filter
@@ -83,6 +88,7 @@ void setup(){
 
   Sensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); //Configure sensor with these settings
   Sensor.setPulseAmplitudeRed(0xFF);  //if the value was 0, here we basically turn off the red LED, so green and IR LEDs are active
+  Sensor.setPulseAmplitudeGreen(0);// trial to calculate HR using IR only, need to comment out the SpO2 task 
   //now that I changed the value to 0xFF it means that all the LEDs are on at the same time 
   xTaskCreatePinnedToCore(
   //xTaskCreate(  
@@ -120,8 +126,13 @@ void loopHR(void * pvParameter) {
     if (flag){          //***if sensor reads real data
       
       iir_ma_filter_for_hr();
-      int neg=find_min_negative(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_gr_buffer);
-      convert_signal_to_positive(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_gr_buffer, neg);
+      //trial for RED LED, next 2 lines
+      int neg = find_min_negative(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_ir2_buffer);
+      convert_signal_to_positive(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_ir2_buffer, neg);
+
+    //the next 2 lines are for GREEN LED
+      // int neg=find_min_negative(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_gr_buffer);
+      // convert_signal_to_positive(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_gr_buffer, neg);
       ComputeHeartRate();
       
       Serial.print("NEW DATA--> ");
@@ -140,13 +151,13 @@ void loopHR(void * pvParameter) {
     //semaphores will fix the sunchronisation issue
     //flag_unplugged = 0;
     xSemaphoreGive( baton );
-    delay(50);
+    delay(1);
   }
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  delay(10);
+  vTaskDelete(NULL);
   //here I will put the info for the upload to firebase 
   
 }
@@ -155,17 +166,20 @@ void iir_ma_filter_for_hr(){
   
   for (int i=0;i<Num_Samples;i++){
     
-    filtered_gr = f.filter(double(gr_buffer[i]));
-    filtered_gr_buffer[i] = round(filtered_gr);
-
+    // filtered_gr = f.filter(double(gr_buffer[i])); //green
+    // filtered_gr_buffer[i] = round(filtered_gr);  //green
+    filtered_ir = f.filter(double(ir_buffer[i]));
+    filtered_ir_buffer[i] = round(filtered_ir);
   }
 
   for (int i= Moving_Average_Num;i<Num_Samples-Moving_Average_Num;i++){
       Sum_Points= 0;
       for( int k =0; k < Num_Points; k++){   
-        Sum_Points = Sum_Points + filtered_gr_buffer[i-Moving_Average_Num+k]; 
+        Sum_Points = Sum_Points + filtered_ir_buffer[i-Moving_Average_Num+k];
+        // Sum_Points = Sum_Points + filtered_gr_buffer[i-Moving_Average_Num+k]; 
       }    
-      ma_gr_buffer[i] = Sum_Points/Num_Points; 
+      ma_ir_buffer[i] = Sum_Points/Num_Points;
+      // ma_gr_buffer[i] = Sum_Points/Num_Points; 
   }
   
 }
@@ -217,8 +231,8 @@ void convert_signal_to_positive(int p1, int p2, int *x, int point){
 
 void ComputeHeartRate(){
   
-  int Mean_Magnitude =Find_Mean(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_gr_buffer);
-  
+  // int Mean_Magnitude =Find_Mean(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_gr_buffer); //green
+  int Mean_Magnitude =Find_Mean(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_ir_buffer);
   //***detect successive peaks and compute PR
   for (int i = 0; i < points_pr; i++){
      PR[i] = 0;
@@ -231,21 +245,25 @@ void ComputeHeartRate(){
   for (int j = Moving_Average_Num; j < Num_Samples-Moving_Average_Num; j++){
       //***Find first peak
       
-      if(ma_gr_buffer[j] > ma_gr_buffer[j-1] && ma_gr_buffer[j] > ma_gr_buffer[j+1] && ma_gr_buffer[j] > Mean_Magnitude && Peak == 0){
-         Peak = ma_gr_buffer[j];
+      // if(ma_gr_buffer[j] > ma_gr_buffer[j-1] && ma_gr_buffer[j] > ma_gr_buffer[j+1] && ma_gr_buffer[j] > Mean_Magnitude && Peak == 0){
+       if(ma_ir_buffer[j] > ma_ir_buffer[j-1] && ma_ir_buffer[j] > ma_ir_buffer[j+1] && ma_ir_buffer[j] > Mean_Magnitude && Peak == 0){ 
+        //  Peak = ma_gr_buffer[j]; //gr
+        Peak = ma_ir_buffer[j];
          Index = j; 
       }
       
       //***Search for next peak 
       
       if(Peak > 0 ){
-       if(ma_gr_buffer[j] > ma_gr_buffer[j-1] && ma_gr_buffer[j] > ma_gr_buffer[j+1] && ma_gr_buffer[j] > Mean_Magnitude){
+      //  if(ma_gr_buffer[j] > ma_gr_buffer[j-1] && ma_gr_buffer[j] > ma_gr_buffer[j+1] && ma_gr_buffer[j] > Mean_Magnitude){
+        if(ma_ir_buffer[j] > ma_ir_buffer[j-1] && ma_ir_buffer[j] > ma_ir_buffer[j+1] && ma_ir_buffer[j] > Mean_Magnitude){
         float d=j-Index;
         float pulse=(float)samp_freq*60/d; //bpm for each PEAK interval
         PR[p]=pulse; 
         p++;
         p %= points_pr; //Wrap variable
-        Peak = ma_gr_buffer[j];
+        Peak = ma_ir_buffer[j];
+        // Peak = ma_gr_buffer[j]; //gr
         Index = j;
        } 
       } 
@@ -262,6 +280,9 @@ void ComputeHeartRate(){
 
   if (c!=0){
       Pulse_Rate_next=sum/c;
+      Serial.print("Pulse Rate next: "); Serial.print(Pulse_Rate_next); Serial.print(", \n");
+      //these lines above do not print out anything
+// thus c = 0, but why?
     if(Pulse_Rate_next > 40 && Pulse_Rate_next < 200){
       if (Pulse_Rate_next-Pulse_Rate_previous>=5){
         Pulse_Rate_next=Pulse_Rate_previous+1;
@@ -288,11 +309,15 @@ int readSamples(){
   
   for (uint32_t i=0;i<Num_Samples;i++){ 
     //read max30105
-    gr_buffer[i] = Sensor.getGreen();
+    // gr_buffer[i] = Sensor.getGreen(); //green
+    ir_buffer[i] = Sensor.getIR();
     //Sensor.nextSample();
 
-    if (gr_buffer[i]<10000){
-      flag=0;
+    // if (gr_buffer[i]<10000){
+    //   flag=0;
+    // }
+    if (ir_buffer[i]<80000){
+      flag = 0;
     }
     delay(40);
   }
@@ -307,6 +332,8 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
     xSemaphoreGive( baton ); //this is the second line because it is the shortest task (compared to HR)
     double t_SP = millis();
     Serial.println(); Serial.print("t_SP: "); Serial.print(t_SP); Serial.println();
+/*
+
     if (flag_unplugged = 1) { //calculate the SpO2 only if the finger is plugged, name of the flag is counterintuitive
       int mean_ir = Find_Mean(0, Num_Samples, ma_ir2_buffer);
       int mean_red = Find_Mean(0, Num_Samples, ma_red_buffer);
@@ -333,7 +360,7 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
         
           /*Serial.print("peak  ir: ");
           Serial.print(ma_ir2_buffer[j]);
-          Serial.println();*/
+          Serial.println();
           SpO2_dc_ir[p_ir]=ma_ir2_buffer[j]; 
           p_ir++;
           p_ir %= points_spo2; //Wrap variable
@@ -343,7 +370,7 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
         if(ma_ir2_buffer[j] < ma_ir2_buffer[j-1] && ma_ir2_buffer[j] < ma_ir2_buffer[j+1] && ma_ir2_buffer[j] < mean_ir && peak_ir==1){
           /*Serial.print("min  ir: ");
           Serial.print(ma_ir2_buffer[j]);
-          Serial.println();*/
+          Serial.println();
           SpO2_ac_ir[m_ir]=SpO2_dc_ir[p_ir-1]-ma_ir2_buffer[j]; 
           m_ir++;
           m_ir %= points_spo2; //Wrap variable
@@ -429,7 +456,8 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
       vTaskDelay(Sampling_Time / portTICK_PERIOD_MS);
     }
     // xSemaphoreGive( baton ); //this line not here, as this is the shortest task, we immediately give the semaphore to the other task
-    delay(50);
+    // delay(50);
+    */
   }
 }
 
