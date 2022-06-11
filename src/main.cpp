@@ -240,16 +240,18 @@ void ComputeHeartRate(){
   int Peak = 0;
   int Index = 0;
   int p=0;
-
+  float pulse;
     
   for (int j = Moving_Average_Num; j < Num_Samples-Moving_Average_Num; j++){
       //***Find first peak
-      
+      // Serial.print("I enter the first for loop of HR"); //confirmed
       // if(ma_gr_buffer[j] > ma_gr_buffer[j-1] && ma_gr_buffer[j] > ma_gr_buffer[j+1] && ma_gr_buffer[j] > Mean_Magnitude && Peak == 0){
        if(ma_ir_buffer[j] > ma_ir_buffer[j-1] && ma_ir_buffer[j] > ma_ir_buffer[j+1] && ma_ir_buffer[j] > Mean_Magnitude && Peak == 0){ 
         //  Peak = ma_gr_buffer[j]; //gr
         Peak = ma_ir_buffer[j];
-         Index = j; 
+          // Serial.print("Peak= "); Serial.print(Peak); Serial.print(" , \t"); // it only appears once
+          //is it because there is only 1 peak? 
+         Index = j; //the error is probably here, check the if condition
       }
       
       //***Search for next peak 
@@ -257,18 +259,32 @@ void ComputeHeartRate(){
       if(Peak > 0 ){
       //  if(ma_gr_buffer[j] > ma_gr_buffer[j-1] && ma_gr_buffer[j] > ma_gr_buffer[j+1] && ma_gr_buffer[j] > Mean_Magnitude){
         if(ma_ir_buffer[j] > ma_ir_buffer[j-1] && ma_ir_buffer[j] > ma_ir_buffer[j+1] && ma_ir_buffer[j] > Mean_Magnitude){
-        float d=j-Index;
-        float pulse=(float)samp_freq*60/d; //bpm for each PEAK interval
-        PR[p]=pulse; 
-        p++;
-        p %= points_pr; //Wrap variable
-        Peak = ma_ir_buffer[j];
-        // Peak = ma_gr_buffer[j]; //gr
-        Index = j;
+          float d=j-Index; //the error is here, that is where d becomes 0
+        // but why
+          Serial.print("d= "); Serial.print(d); Serial.print(", \t"); 
+          if (d > 0 ){
+            float pulse=(float)samp_freq*60/d; //bpm for each PEAK interval
+          }else{
+             float pulse = 0; 
+         }
+        // float pulse=(float)samp_freq*60/d; //bpm for each PEAK interval
+          PR[p]=pulse; 
+          Serial.print("PR[p]= "); Serial.print(PR[p]); Serial.print(" , \t");
+        // it doesnt even print that, there is an issue with Peak, it is negative or 0
+          p++;
+          p %= points_pr; //Wrap variable
+         Peak = ma_ir_buffer[j];
+         // Peak = ma_gr_buffer[j]; //gr
+         Index = j;
        } 
-      } 
+     } 
   } 
-
+  
+//debugging: will print out all the values of PR
+// for (int i = 0; i<points_pr; i++){
+//   Serial.print("Pr[i] = "); Serial.print(PR[i]); Serial.print(", \t"); //it remains 0, will investigate why
+// }
+//end of debugging
   float sum=0;
   int c=0;
   for (int i=0; i< points_pr; i++){
