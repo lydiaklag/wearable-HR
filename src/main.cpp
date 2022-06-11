@@ -235,9 +235,9 @@ void ComputeHeartRate(){
   int Mean_Magnitude =Find_Mean(Moving_Average_Num, Num_Samples - Moving_Average_Num, ma_ir_buffer);
   //***detect successive peaks and compute PR
   for (int i = 0; i < points_pr; i++){
-     PR[i] = 0;
+     PR[i] = 0; //resetting the PR array
   }
-  int  Peak = 0;
+  int Peak = 0;
   int Index = 0;
   int p=0;
 
