@@ -80,14 +80,16 @@ void setup(){
   }
   baton = xSemaphoreCreateMutex();
   byte ledBrightness = 0xDF; //Options: 0=Off to 255=50mA  --> DF=~44mA
-  byte sampleAverage = 2;    //Options: 1, 2, 4, 8, 16, 32
+  byte sampleAverage = 8;    //Options: 1, 2, 4, 8, 16, 32
   byte ledMode = 3;          //Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
   int sampleRate = 200;      //Options: 50, 100, 200, 400, 800, 1000, 1600, 3200
   int pulseWidth = 411;      //Options: 69, 118, 215, 411
-  int adcRange = 2048;       //Options: 2048, 4096, 8192, 16384
+  int adcRange = 16384;       //Options: 2048, 4096, 8192, 16384
 
   Sensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); //Configure sensor with these settings
-  Sensor.setPulseAmplitudeRed(0xFF);  //if the value was 0, here we basically turn off the red LED, so green and IR LEDs are active
+  Sensor.setPulseAmplitudeRed(0xDF);
+  Sensor.setPulseAmplitudeIR(0xDF);
+    //if the value was 0, here we basically turn off the red LED, so green and IR LEDs are active
   Sensor.setPulseAmplitudeGreen(0);// trial to calculate HR using IR only, need to comment out the SpO2 task 
   //now that I changed the value to 0xFF it means that all the LEDs are on at the same time 
   xTaskCreatePinnedToCore(
@@ -249,9 +251,9 @@ void ComputeHeartRate(){
        if(ma_ir_buffer[j] > ma_ir_buffer[j-1] && ma_ir_buffer[j] > ma_ir_buffer[j+1] && ma_ir_buffer[j] > Mean_Magnitude && Peak == 0){ 
         //  Peak = ma_gr_buffer[j]; //gr
         Peak = ma_ir_buffer[j];
-          // Serial.print("Peak= "); Serial.print(Peak); Serial.print(" , \t"); // it only appears once
+          Serial.print("Peak= "); Serial.print(Peak); Serial.print(" , \t"); // it only appears once
           //is it because there is only 1 peak? 
-         Index = j; //the error is probably here, check the if condition
+         Index = j*40; //the error is probably here, check the if condition
       }
       
       //***Search for next peak 
@@ -259,11 +261,12 @@ void ComputeHeartRate(){
       if(Peak > 0 ){
       //  if(ma_gr_buffer[j] > ma_gr_buffer[j-1] && ma_gr_buffer[j] > ma_gr_buffer[j+1] && ma_gr_buffer[j] > Mean_Magnitude){
         if(ma_ir_buffer[j] > ma_ir_buffer[j-1] && ma_ir_buffer[j] > ma_ir_buffer[j+1] && ma_ir_buffer[j] > Mean_Magnitude){
-          float d=j-Index; //the error is here, that is where d becomes 0
+          float d=(j*40)-Index; //the error is here, that is where d becomes 0
         // but why
           Serial.print("d= "); Serial.print(d); Serial.print(", \t"); 
           if (d > 0 ){
-            float pulse=(float)samp_freq*60/d; //bpm for each PEAK interval
+            // float pulse=(float)samp_freq*60/d; //bpm for each PEAK interval
+            pulse=(float)60000/d; 
           }else{
              float pulse = 0; 
          }
@@ -275,7 +278,7 @@ void ComputeHeartRate(){
           p %= points_pr; //Wrap variable
          Peak = ma_ir_buffer[j];
          // Peak = ma_gr_buffer[j]; //gr
-         Index = j;
+         Index = j*40;
        } 
      } 
   } 
@@ -348,7 +351,7 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
     xSemaphoreGive( baton ); //this is the second line because it is the shortest task (compared to HR)
     double t_SP = millis();
     Serial.println(); Serial.print("t_SP: "); Serial.print(t_SP); Serial.println();
-/*
+
 
     if (flag_unplugged = 1) { //calculate the SpO2 only if the finger is plugged, name of the flag is counterintuitive
       int mean_ir = Find_Mean(0, Num_Samples, ma_ir2_buffer);
@@ -374,7 +377,7 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
         //***Find peaks and means for IR
         if(ma_ir2_buffer[j] > ma_ir2_buffer[j-1] && ma_ir2_buffer[j] > ma_ir2_buffer[j+1] && ma_ir2_buffer[j] > mean_ir && peak_ir==0){
         
-          /*Serial.print("peak  ir: ");
+          Serial.print("peak  ir: ");
           Serial.print(ma_ir2_buffer[j]);
           Serial.println();
           SpO2_dc_ir[p_ir]=ma_ir2_buffer[j]; 
@@ -384,7 +387,7 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
         }
         
         if(ma_ir2_buffer[j] < ma_ir2_buffer[j-1] && ma_ir2_buffer[j] < ma_ir2_buffer[j+1] && ma_ir2_buffer[j] < mean_ir && peak_ir==1){
-          /*Serial.print("min  ir: ");
+          Serial.print("min  ir: ");
           Serial.print(ma_ir2_buffer[j]);
           Serial.println();
           SpO2_ac_ir[m_ir]=SpO2_dc_ir[p_ir-1]-ma_ir2_buffer[j]; 
@@ -473,7 +476,7 @@ for(;;){ //we need this huge endless loop, for the FreeRTOS task, requirement
     }
     // xSemaphoreGive( baton ); //this line not here, as this is the shortest task, we immediately give the semaphore to the other task
     // delay(50);
-    */
+    
   }
 }
 
